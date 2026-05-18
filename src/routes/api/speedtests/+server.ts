@@ -9,7 +9,8 @@ export const GET: RequestHandler = async ({ url }) => {
 	const table = schema ? `${schema}.${tbl}` : tbl;
 
 	const metric = url.searchParams.get('metric') ?? 'dl_speed_mbps';
-	const date = url.searchParams.get('date') ?? null;
+	const from = url.searchParams.get('from') ?? null;
+	const to = url.searchParams.get('to') ?? null;
 	const provider = url.searchParams.get('provider') ?? null;
 	const aggregate = url.searchParams.get('aggregate') === 'true';
 
@@ -26,9 +27,13 @@ export const GET: RequestHandler = async ({ url }) => {
 	];
 	const params: string[] = [];
 
-	if (date) {
-		params.push(date);
-		conditions.push(`LEFT(test_date, 10) = $${params.length}`);
+	if (from) {
+		params.push(from);
+		conditions.push(`LEFT(test_date, 10) >= $${params.length}`);
+	}
+	if (to) {
+		params.push(to);
+		conditions.push(`LEFT(test_date, 10) <= $${params.length}`);
 	}
 
 	if (provider && provider !== 'all') {

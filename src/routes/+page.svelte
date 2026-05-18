@@ -14,10 +14,24 @@
 		{ key: 'ave_latency_ms', label: 'Latency',  unit: 'ms',   higherIsBetter: false, color: (t) => interpolateRdYlGn(1 - t) }
 	];
 
-	function yesterday(): string {
-		const d = new Date(); d.setDate(d.getDate() - 1);
+	function today(): string { return new Date().toISOString().slice(0, 10); }
+	function daysAgo(n: number): string {
+		const d = new Date(); d.setDate(d.getDate() - n);
 		return d.toISOString().slice(0, 10);
 	}
+
+	type DateRange = { label: string; from: string; to: string };
+
+	function buildRanges(): DateRange[] {
+		return [
+			{ label: 'Today',       from: today(),     to: today() },
+			{ label: 'Last 2 days', from: daysAgo(1),  to: today() },
+			{ label: 'Last 30 days',from: daysAgo(29), to: today() },
+		];
+	}
+
+	let ranges: DateRange[] = [];
+	let selectedRange: DateRange;
 
 	// Deterministic provider colour (must match LeafletMap)
 	function providerColor(provider: string): string {
@@ -37,7 +51,6 @@
 	let aggregate = false;
 
 	let selectedMetric: Metric = metrics[0];
-	let selectedDate = yesterday();
 	let selectedProvider = 'rain';
 	let minDate = '';
 	let maxDate = '';
@@ -58,21 +71,19 @@
 	$: barMax = tooltipAreaProviders.length ? tooltipAreaProviders[0].value : 1;
 
 	onMount(async () => {
-		const [dateRes, provRes] = await Promise.all([
-			fetch('/api/dates').then(r => r.json()).catch(() => ({})),
+		ranges = buildRanges();
+		selectedRange = ranges[0]; // default: Today
+
+		const [provRes] = await Promise.all([
 			fetch('/api/providers').then(r => r.json()).catch(() => ({ providers: [] }))
 		]);
-		if (dateRes.min_date) {
-			minDate = dateRes.min_date.slice(0, 10);
-			maxDate = dateRes.max_date.slice(0, 10);
-			if (selectedDate > maxDate) selectedDate = maxDate;
-			if (selectedDate < minDate) selectedDate = minDate;
-		}
+
 		if (provRes.providers?.length) {
 			providers = provRes.providers;
 			if (!providers.some(p => p.provider.toLowerCase().includes('rain')))
 				selectedProvider = providers[0].provider;
 		}
+
 		await loadData();
 		mounted = true;
 	});
@@ -80,7 +91,7 @@
 	async function loadData() {
 		loading = true; error = '';
 		try {
-			const params = new URLSearchParams({ metric: selectedMetric.key, date: selectedDate, provider: selectedProvider, aggregate: String(aggregate) });
+			const params = new URLSearchParams({ metric: selectedMetric.key, from: selectedRange.from, to: selectedRange.to, provider: selectedProvider, aggregate: String(aggregate) });
 			const res = await fetch(`/api/speedtests?${params}`);
 			const data = await res.json();
 			if (data.error) throw new Error(data.error);
@@ -92,7 +103,7 @@
 	async function loadLeet() {
 		leetLoading = true;
 		try {
-			const params = new URLSearchParams({ metric: selectedMetric.key, date: selectedDate });
+			const params = new URLSearchParams({ metric: selectedMetric.key, from: selectedRange.from, to: selectedRange.to });
 			const res = await fetch(`/api/leet?${params}`);
 			const data = await res.json();
 			if (data.error) throw new Error(data.error);
@@ -106,7 +117,7 @@
 		if (leet && leetPoints.length === 0) await loadLeet();
 	}
 
-	$: if (mounted) { selectedMetric; selectedDate; selectedProvider; aggregate; loadData(); if (leet) loadLeet(); }
+	$: if (mounted) { selectedMetric; selectedRange; selectedProvider; aggregate; loadData(); if (leet) loadLeet(); }
 
 	$: maxVal = Math.max(...points.map(p => p.value), 1);
 	$: minVal = Math.min(...points.map(p => p.value), 0);
@@ -148,11 +159,15 @@
 			{/each}
 		</div>
 
-		<!-- Date -->
+		<!-- Date range -->
 		<div class="flex items-center gap-2 text-sm">
-			<label for="date-input" class="text-gray-500">Date</label>
-			<input id="date-input" type="date" bind:value={selectedDate} min={minDate} max={maxDate} on:change={loadData}
-				class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 text-sm focus:outline-none focus:border-indigo-500" />
+			<label for="range-select" class="text-gray-500">Period</label>
+			<select id="range-select" bind:value={selectedRange}
+				class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 text-sm focus:outline-none focus:border-indigo-500">
+				{#each ranges as r}
+					<option value={r}>{r.label}</option>
+				{/each}
+			</select>
 		</div>
 
 		<!-- Provider (hidden in leet mode) -->
@@ -220,7 +235,7 @@
 		/>
 		{#if !loading && !leetLoading && mounted && (leet ? leetPoints.length === 0 : points.length === 0)}
 			<div class="absolute inset-0 flex items-center justify-center text-gray-500 pointer-events-none z-10">
-				No data for {selectedDate}
+				No data for {selectedRange?.label ?? ''}
 			</div>
 		{/if}
 	</div>
