@@ -1,10 +1,12 @@
 import { json } from '@sveltejs/kit';
 import { getPool } from '$lib/db.js';
-import { GAUSSTABLE } from '$env/static/private';
+import { GAUSSTABLE, GAUSSSCHEMA } from '$env/static/private';
 import type { RequestHandler } from './$types.js';
 
 export const GET: RequestHandler = async ({ url }) => {
-	const table = GAUSSTABLE ?? 'ookla';
+	const schema = GAUSSSCHEMA ?? '';
+	const tbl = GAUSSTABLE ?? 'ookla';
+	const table = schema ? `${schema}.${tbl}` : tbl;
 	const metric = url.searchParams.get('metric') ?? 'dl_speed_mbps';
 	const date = url.searchParams.get('date') ?? null;
 	const provider = url.searchParams.get('provider') ?? null;
