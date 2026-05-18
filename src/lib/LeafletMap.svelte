@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy, createEventDispatcher } from 'svelte';
 
-	export let points: { area: string; provider: string; lat: number; lng: number; value: number; test_date: string }[] = [];
+	export let points: { area: string; provider: string; lat: number; lng: number; value: number; test_date: string | null; count: number | null }[] = [];
 	export let leetPoints: { area: string; provider: string; lat: number; lng: number; value: number; count: number }[] = [];
 	export let leet = false;
 	export let metricLabel = 'Download';
@@ -11,7 +11,7 @@
 	export let minVal = 0;
 
 	const dispatch = createEventDispatcher<{
-		hover: { area: string; value: number; provider?: string; test_date?: string; x: number; y: number } | null
+		hover: { area: string; value: number; provider?: string; test_date?: string | null; count?: number | null; x: number; y: number } | null
 	}>();
 
 	let mapEl: HTMLDivElement;
@@ -114,10 +114,10 @@
 
 				circle.on('mouseover', (e) => {
 					circle.setStyle({ fillOpacity: 1, weight: 2 });
-					dispatch('hover', { area: pt.area, value: pt.value, provider: pt.provider, test_date: pt.test_date, x: e.originalEvent.clientX, y: e.originalEvent.clientY });
+					dispatch('hover', { area: pt.area, value: pt.value, provider: pt.provider, test_date: pt.test_date, count: pt.count, x: e.originalEvent.clientX, y: e.originalEvent.clientY });
 				});
 				circle.on('mousemove', (e) => {
-					dispatch('hover', { area: pt.area, value: pt.value, provider: pt.provider, test_date: pt.test_date, x: e.originalEvent.clientX, y: e.originalEvent.clientY });
+					dispatch('hover', { area: pt.area, value: pt.value, provider: pt.provider, test_date: pt.test_date, count: pt.count, x: e.originalEvent.clientX, y: e.originalEvent.clientY });
 				});
 				circle.on('mouseout', () => {
 					circle.setStyle({ fillOpacity: 0.75, weight: 1 });

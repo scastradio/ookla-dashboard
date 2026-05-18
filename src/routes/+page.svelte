@@ -3,7 +3,7 @@
 	import { onMount } from 'svelte';
 	import LeafletMap from '$lib/LeafletMap.svelte';
 
-	type Point     = { area: string; provider: string; lat: number; lng: number; value: number; test_date: string };
+	type Point     = { area: string; provider: string; lat: number; lng: number; value: number; test_date: string | null; count: number | null };
 	type LeetPoint = { area: string; provider: string; lat: number; lng: number; value: number; count: number };
 	type Provider  = { provider: string; count: number };
 	type Metric    = { key: string; label: string; unit: string; higherIsBetter: boolean; color: (t: number) => string };
@@ -34,6 +34,7 @@
 	let error = '';
 	let mounted = false;
 	let leet = false;
+	let aggregate = false;
 
 	let selectedMetric: Metric = metrics[0];
 	let selectedDate = yesterday();
@@ -41,7 +42,7 @@
 	let minDate = '';
 	let maxDate = '';
 
-	type HoverData = { area: string; value: number; provider?: string; test_date?: string; x: number; y: number } | null;
+	type HoverData = { area: string; value: number; provider?: string; test_date?: string | null; count?: number | null; x: number; y: number } | null;
 	let tooltip: HoverData = null;
 
 	// Group leet points by area for bar chart tooltip
@@ -79,7 +80,7 @@
 	async function loadData() {
 		loading = true; error = '';
 		try {
-			const params = new URLSearchParams({ metric: selectedMetric.key, date: selectedDate, provider: selectedProvider });
+			const params = new URLSearchParams({ metric: selectedMetric.key, date: selectedDate, provider: selectedProvider, aggregate: String(aggregate) });
 			const res = await fetch(`/api/speedtests?${params}`);
 			const data = await res.json();
 			if (data.error) throw new Error(data.error);
@@ -105,7 +106,7 @@
 		if (leet && leetPoints.length === 0) await loadLeet();
 	}
 
-	$: if (mounted) { selectedMetric; selectedDate; selectedProvider; loadData(); if (leet) loadLeet(); }
+	$: if (mounted) { selectedMetric; selectedDate; selectedProvider; aggregate; loadData(); if (leet) loadLeet(); }
 
 	$: maxVal = Math.max(...points.map(p => p.value), 1);
 	$: minVal = Math.min(...points.map(p => p.value), 0);
@@ -172,6 +173,18 @@
 				{/if}
 			</div>
 		{/if}
+
+		<!-- Aggregate toggle -->
+		<button
+			on:click={() => { aggregate = !aggregate; }}
+			class="px-3 py-1.5 rounded border text-xs transition-all
+				{aggregate
+					? 'bg-indigo-500/20 border-indigo-500 text-indigo-300'
+					: 'border-gray-600 text-gray-500 hover:border-indigo-600 hover:text-indigo-400'}"
+			title="{aggregate ? 'Showing area averages' : 'Showing individual tests'}"
+		>
+			{aggregate ? 'Aggregated' : 'Individual'}
+		</button>
 
 		<!-- 1337 toggle -->
 		<button
@@ -253,12 +266,16 @@
 				{/each}
 			</div>
 		{:else}
-			<!-- Normal mode: individual test tooltip -->
+			<!-- Normal mode tooltip -->
 			<div class="px-4 py-3">
 				<p class="font-semibold text-white mb-1">{tooltip.area}</p>
-				<p class="text-gray-400 text-xs mb-1">{tooltip.provider ?? ''}</p>
+				{#if !aggregate}
+					<p class="text-gray-400 text-xs mb-1">{tooltip.provider ?? ''}</p>
+				{/if}
 				<p class="text-gray-300">{selectedMetric.label}: <span class="font-semibold text-indigo-300">{tooltip.value.toFixed(2)} {selectedMetric.unit}</span></p>
-				{#if tooltip.test_date}
+				{#if aggregate && tooltip.count}
+					<p class="text-gray-500 text-xs mt-0.5">{tooltip.count.toLocaleString()} tests · area average</p>
+				{:else if tooltip.test_date}
 					<p class="text-gray-500 text-xs mt-1">{tooltip.test_date.slice(0,16)}</p>
 				{/if}
 			</div>
