@@ -1,11 +1,15 @@
 <script lang="ts">
 	import { Chart, GeoPath, GeoPoint, Svg } from 'layerchart';
-	import { geoNaturalEarth1 } from 'd3-geo';
+	import { geoMercator } from 'd3-geo';
 	import { scaleSqrt, scaleSequential } from 'd3-scale';
 	import { interpolateBlues, interpolateRdYlGn } from 'd3-scale-chromatic';
 	import { feature } from 'topojson-client';
 	import { onMount } from 'svelte';
 	import type { Topology } from 'topojson-specification';
+
+	// South Africa (710) + immediate neighbours for geographic context
+	const SA_ID = '710';
+	const NEIGHBOUR_IDS = new Set(['516','72','716','508','748','426']); // Namibia, Botswana, Zimbabwe, Mozambique, Eswatini, Lesotho
 
 	type Point = { area: string; lat: number; lng: number; value: number; count: number };
 	type Provider = { provider: string; count: number };
@@ -25,6 +29,9 @@
 
 	let selectedMetric: Metric = metrics[0];
 	let geojson: ReturnType<typeof feature> | null = null;
+	let saFeature: any = null;
+	let contextFeatures: any[] = [];
+	let saFeatures: any[] = [];
 	let points: Point[] = [];
 	let providers: Provider[] = [];
 	let loading = false;
@@ -42,13 +49,16 @@
 	let mounted = false;
 	onMount(async () => {
 		const [topoRes, dateRes, provRes] = await Promise.all([
-			fetch('/world-110m.json'),
+			fetch('/world-50m.json'),
 			fetch('/api/dates').then((r) => r.json()).catch(() => ({})),
 			fetch('/api/providers').then((r) => r.json()).catch(() => ({ providers: [] }))
 		]);
 
 		const topo: Topology = await topoRes.json();
 		geojson = feature(topo, topo.objects.countries as any);
+		saFeature = (geojson as any).features.find((f: any) => String(f.id) === SA_ID);
+		saFeatures = [(geojson as any).features.find((f: any) => String(f.id) === SA_ID)].filter(Boolean);
+		contextFeatures = (geojson as any).features.filter((f: any) => NEIGHBOUR_IDS.has(String(f.id)));
 
 		if (dateRes.min_date) {
 			minDate = dateRes.min_date.slice(0, 10);
@@ -193,47 +203,47 @@
 
 	<!-- Map -->
 	<div class="flex-1 min-h-0 relative">
-		{#if geojson}
+		{#if geojson && saFeature}
 			<div class="absolute inset-0">
 				<Chart
-					geo={{ projection: geoNaturalEarth1, fitGeojson: geojson }}
-					padding={{ top: 16, bottom: 16, left: 16, right: 16 }}
+					geo={{ projection: geoMercator, fitGeojson: saFeature }}
+					padding={{ top: 20, bottom: 20, left: 20, right: 20 }}
 				>
-				<Svg>
-					{#each geojson.features as feat}
-						<GeoPath
-							geojson={feat}
-							fill="#1f2937"
-							stroke="#374151"
-							style="stroke-width: 0.4px"
-						/>
-					{/each}
-
-					{#each points as pt (pt.area)}
-						<GeoPoint
-							lat={pt.lat}
-							long={pt.lng}
-							on:pointerenter={(e) => {
-								tooltip = { area: pt.area, value: pt.value, count: pt.count };
-								tooltipX = e.clientX;
-								tooltipY = e.clientY;
-							}}
-							on:pointermove={(e) => { tooltipX = e.clientX; tooltipY = e.clientY; }}
-							on:pointerleave={() => { tooltip = null; }}
-						>
-							<circle
-								r={rScale(pt.value)}
-								fill={cScale(pt.value)}
-								fill-opacity="0.72"
-								stroke={cScale(pt.value)}
-								stroke-width="0.5"
-								stroke-opacity="0.9"
-								style="cursor: pointer"
-							/>
-						</GeoPoint>
-					{/each}
-				</Svg>
-			</Chart>
+					<Svg>
+						<!-- Neighbouring countries as muted context -->
+						{#each contextFeatures as feat}
+							<GeoPath geojson={feat} fill="#1a2332" stroke="#2d3f55" style="stroke-width:0.6px" />
+						{/each}
+						<!-- South Africa -->
+						{#each saFeatures as feat}
+							<GeoPath geojson={feat} fill="#1e2d3d" stroke="#4a6fa5" style="stroke-width:1px" />
+						{/each}
+						<!-- Bubbles -->
+						{#each points as pt (pt.area)}
+							<GeoPoint
+								lat={pt.lat}
+								long={pt.lng}
+								on:pointerenter={(e) => {
+									tooltip = { area: pt.area, value: pt.value, count: pt.count };
+									tooltipX = e.clientX;
+									tooltipY = e.clientY;
+								}}
+								on:pointermove={(e) => { tooltipX = e.clientX; tooltipY = e.clientY; }}
+								on:pointerleave={() => { tooltip = null; }}
+							>
+								<circle
+									r={rScale(pt.value)}
+									fill={cScale(pt.value)}
+									fill-opacity="0.78"
+									stroke={cScale(pt.value)}
+									stroke-width="0.5"
+									stroke-opacity="0.9"
+									style="cursor:pointer"
+								/>
+							</GeoPoint>
+						{/each}
+					</Svg>
+				</Chart>
 			</div>
 
 			{#if points.length === 0 && !loading}
@@ -244,7 +254,6 @@
 		{:else}
 			<div class="flex items-center justify-center h-full text-gray-500">Loading map…</div>
 		{/if}
-
 		<!-- Floating tooltip -->
 		{#if tooltip}
 			<div
