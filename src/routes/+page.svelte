@@ -1,79 +1,67 @@
 <script lang="ts">
-	import { Chart, GeoPath, GeoPoint, Svg, Tooltip } from 'layerchart';
+	import { Chart, GeoPath, GeoPoint, Svg } from 'layerchart';
 	import { geoNaturalEarth1 } from 'd3-geo';
 	import { scaleSqrt, scaleSequential } from 'd3-scale';
-	import { interpolateRdYlGn, interpolateBlues } from 'd3-scale-chromatic';
+	import { interpolateBlues, interpolateRdYlGn } from 'd3-scale-chromatic';
 	import { feature } from 'topojson-client';
 	import { onMount } from 'svelte';
 	import type { Topology } from 'topojson-specification';
 
-	type Point = {
-		area: string;
-		lat: number;
-		lng: number;
-		value: number;
-		count: number;
-	};
-
-	type Metric = {
-		key: string;
-		label: string;
-		unit: string;
-		higherIsBetter: boolean;
-		colorScheme: (t: number) => string;
-	};
+	type Point = { area: string; lat: number; lng: number; value: number; count: number };
+	type Provider = { provider: string; count: number };
+	type Metric = { key: string; label: string; unit: string; higherIsBetter: boolean; color: (t: number) => string };
 
 	const metrics: Metric[] = [
-		{
-			key: 'dl_speed_mbps',
-			label: 'Download',
-			unit: 'Mbps',
-			higherIsBetter: true,
-			colorScheme: interpolateBlues
-		},
-		{
-			key: 'ul_speed_mbps',
-			label: 'Upload',
-			unit: 'Mbps',
-			higherIsBetter: true,
-			colorScheme: (t: number) => interpolateRdYlGn(t)
-		},
-		{
-			key: 'ave_latency_ms',
-			label: 'Latency',
-			unit: 'ms',
-			higherIsBetter: false,
-			colorScheme: (t: number) => interpolateRdYlGn(1 - t)
-		}
+		{ key: 'dl_speed_mbps',  label: 'Download', unit: 'Mbps', higherIsBetter: true,  color: interpolateBlues },
+		{ key: 'ul_speed_mbps',  label: 'Upload',   unit: 'Mbps', higherIsBetter: true,  color: interpolateRdYlGn },
+		{ key: 'ave_latency_ms', label: 'Latency',  unit: 'ms',   higherIsBetter: false, color: (t) => interpolateRdYlGn(1 - t) }
 	];
+
+	function yesterday(): string {
+		const d = new Date();
+		d.setDate(d.getDate() - 1);
+		return d.toISOString().slice(0, 10);
+	}
 
 	let selectedMetric: Metric = metrics[0];
 	let geojson: ReturnType<typeof feature> | null = null;
 	let points: Point[] = [];
+	let providers: Provider[] = [];
 	let loading = false;
 	let error = '';
+
+	let selectedDate = yesterday();
+	let selectedProvider = 'rain';
+	let minDate = '';
+	let maxDate = '';
+
 	let tooltip: { area: string; value: number; count: number } | null = null;
 	let tooltipX = 0;
 	let tooltipY = 0;
 
-	let fromDate = '';
-	let toDate = '';
-	let minDate = '';
-	let maxDate = '';
-
 	onMount(async () => {
-		const [topoRes, dateRes] = await Promise.all([
+		const [topoRes, dateRes, provRes] = await Promise.all([
 			fetch('/world-110m.json'),
-			fetch('/api/dates').then((r) => r.json()).catch(() => ({}))
+			fetch('/api/dates').then((r) => r.json()).catch(() => ({})),
+			fetch('/api/providers').then((r) => r.json()).catch(() => ({ providers: [] }))
 		]);
+
 		const topo: Topology = await topoRes.json();
 		geojson = feature(topo, topo.objects.countries as any);
 
 		if (dateRes.min_date) {
 			minDate = dateRes.min_date.slice(0, 10);
 			maxDate = dateRes.max_date.slice(0, 10);
-			fromDate = minDate;
-			toDate = maxDate;
+			// If yesterday falls outside DB range, use max available
+			if (selectedDate > maxDate) selectedDate = maxDate;
+			if (selectedDate < minDate) selectedDate = minDate;
+		}
+
+		if (provRes.providers?.length) {
+			providers = provRes.providers;
+			// Confirm 'rain' actually exists, otherwise use first provider
+			const hasRain = providers.some((p) => p.provider.toLowerCase().includes('rain'));
+			if (!hasRain && providers.length) selectedProvider = providers[0].provider;
 		}
 
 		await loadData();
@@ -83,9 +71,11 @@
 		loading = true;
 		error = '';
 		try {
-			const params = new URLSearchParams({ metric: selectedMetric.key });
-			if (fromDate) params.set('from', fromDate);
-			if (toDate) params.set('to', toDate);
+			const params = new URLSearchParams({
+				metric: selectedMetric.key,
+				date: selectedDate,
+				provider: selectedProvider
+			});
 			const res = await fetch(`/api/speedtests?${params}`);
 			const data = await res.json();
 			if (data.error) throw new Error(data.error);
@@ -98,50 +88,46 @@
 		}
 	}
 
-	$: if (selectedMetric) loadData();
+	$: selectedMetric, selectedDate, selectedProvider, loadData();
 
-	$: maxValue = Math.max(...points.map((p) => p.value), 1);
-	$: minValue = Math.min(...points.map((p) => p.value), 0);
+	$: maxVal = Math.max(...points.map((p) => p.value), 1);
+	$: minVal = Math.min(...points.map((p) => p.value), 0);
 
-	$: radiusScale = scaleSqrt()
-		.domain([0, maxValue])
-		.range([2, 28])
-		.clamp(true);
+	$: rScale = scaleSqrt().domain([0, maxVal]).range([3, 30]).clamp(true);
 
-	$: colorScale = scaleSequential(selectedMetric.colorScheme).domain(
-		selectedMetric.higherIsBetter ? [minValue, maxValue] : [maxValue, minValue]
+	$: cScale = scaleSequential(selectedMetric.color).domain(
+		selectedMetric.higherIsBetter ? [minVal, maxVal] : [maxVal, minVal]
 	);
 
-	$: avgValue = points.length
-		? points.reduce((s, p) => s + p.value * p.count, 0) / points.reduce((s, p) => s + p.count, 0)
-		: 0;
 	$: totalTests = points.reduce((s, p) => s + p.count, 0);
+	$: avgVal = totalTests
+		? points.reduce((s, p) => s + p.value * p.count, 0) / totalTests
+		: 0;
 </script>
 
-<div class="min-h-screen bg-gray-950 text-gray-100 flex flex-col">
+<div class="min-h-screen flex flex-col bg-gray-950 text-gray-100">
 	<!-- Header -->
-	<header class="border-b border-gray-800 px-6 py-4 flex items-center justify-between">
+	<header class="px-6 py-4 border-b border-gray-800 flex items-center justify-between">
 		<div>
 			<h1 class="text-xl font-semibold tracking-tight">Ookla Speed Test Map</h1>
-			<p class="text-xs text-gray-500 mt-0.5">South Africa — aggregated by area</p>
+			<p class="text-xs text-gray-500 mt-0.5">South Africa · aggregated by area</p>
 		</div>
-		<div class="flex items-center gap-3 text-sm">
+		<div class="text-sm text-gray-400 flex items-center gap-3">
 			{#if totalTests > 0}
-				<span class="text-gray-400">{totalTests.toLocaleString()} tests</span>
-				<span class="text-gray-600">·</span>
-				<span class="text-gray-400">
-					avg {selectedMetric.label}: <strong class="text-white"
-						>{avgValue.toFixed(1)} {selectedMetric.unit}</strong
-					>
+				<span>{totalTests.toLocaleString()} tests</span>
+				<span class="text-gray-700">·</span>
+				<span>
+					avg {selectedMetric.label}:
+					<strong class="text-white">{avgVal.toFixed(1)} {selectedMetric.unit}</strong>
 				</span>
 			{/if}
 		</div>
 	</header>
 
 	<!-- Controls -->
-	<div class="flex items-center gap-6 px-6 py-3 border-b border-gray-800 bg-gray-900">
-		<!-- Metric toggle -->
-		<div class="flex items-center gap-1 rounded-md border border-gray-700 p-0.5">
+	<div class="px-6 py-3 bg-gray-900 border-b border-gray-800 flex flex-wrap items-center gap-5">
+		<!-- Metric -->
+		<div class="flex rounded-md border border-gray-700 p-0.5 gap-0.5">
 			{#each metrics as m}
 				<button
 					class="px-3 py-1 rounded text-sm transition-colors {selectedMetric.key === m.key
@@ -154,115 +140,134 @@
 			{/each}
 		</div>
 
-		<!-- Date filters -->
+		<!-- Date -->
 		<div class="flex items-center gap-2 text-sm">
-			<label class="text-gray-500">From</label>
+			<label for="date-input" class="text-gray-500">Date</label>
 			<input
+				id="date-input"
 				type="date"
-				bind:value={fromDate}
+				bind:value={selectedDate}
 				min={minDate}
-				max={toDate || maxDate}
-				on:change={loadData}
-				class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 text-sm focus:outline-none focus:border-indigo-500"
-			/>
-			<label class="text-gray-500">To</label>
-			<input
-				type="date"
-				bind:value={toDate}
-				min={fromDate || minDate}
 				max={maxDate}
 				on:change={loadData}
 				class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 text-sm focus:outline-none focus:border-indigo-500"
 			/>
 		</div>
 
+		<!-- Provider -->
+		<div class="flex items-center gap-2 text-sm">
+			<label for="provider-select" class="text-gray-500">Provider</label>
+			{#if providers.length > 0}
+				<select
+					id="provider-select"
+					bind:value={selectedProvider}
+					on:change={loadData}
+					class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 text-sm focus:outline-none focus:border-indigo-500"
+				>
+					<option value="all">All providers</option>
+					{#each providers as p}
+						<option value={p.provider}>{p.provider} ({p.count.toLocaleString()})</option>
+					{/each}
+				</select>
+			{:else}
+				<input
+					id="provider-select"
+					type="text"
+					bind:value={selectedProvider}
+					placeholder="e.g. rain"
+					on:change={loadData}
+					class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 text-sm w-32 focus:outline-none focus:border-indigo-500"
+				/>
+			{/if}
+		</div>
+
 		{#if loading}
-			<span class="text-xs text-indigo-400 animate-pulse">Loading…</span>
+			<span class="text-xs text-indigo-400 animate-pulse ml-auto">Loading…</span>
 		{/if}
 		{#if error}
-			<span class="text-xs text-red-400">Error: {error}</span>
+			<span class="text-xs text-red-400 ml-auto truncate max-w-xs" title={error}>⚠ {error}</span>
 		{/if}
 	</div>
 
 	<!-- Map -->
-	<div class="flex-1 relative" style="min-height: 520px;">
+	<div class="flex-1 relative" style="min-height: 540px;">
 		{#if geojson}
 			<Chart
-				geo={{
-					projection: geoNaturalEarth1,
-					fitGeojson: geojson
-				}}
-				padding={{ top: 20, bottom: 20, left: 20, right: 20 }}
+				geo={{ projection: geoNaturalEarth1, fitGeojson: geojson }}
+				padding={{ top: 16, bottom: 16, left: 16, right: 16 }}
 			>
 				<Svg>
-					<!-- Base map -->
 					{#each geojson.features as feat}
 						<GeoPath
 							geojson={feat}
-							class="fill-gray-800 stroke-gray-700"
+							fill="#1f2937"
+							stroke="#374151"
 							style="stroke-width: 0.4px"
 						/>
 					{/each}
 
-					<!-- Bubbles -->
-					{#each points as point (point.area)}
+					{#each points as pt (pt.area)}
 						<GeoPoint
-							lat={point.lat}
-							long={point.lng}
+							lat={pt.lat}
+							long={pt.lng}
 							on:pointerenter={(e) => {
-								tooltip = { area: point.area, value: point.value, count: point.count };
+								tooltip = { area: pt.area, value: pt.value, count: pt.count };
 								tooltipX = e.clientX;
 								tooltipY = e.clientY;
 							}}
+							on:pointermove={(e) => { tooltipX = e.clientX; tooltipY = e.clientY; }}
 							on:pointerleave={() => { tooltip = null; }}
 						>
 							<circle
-								r={radiusScale(point.value)}
-								fill={colorScale(point.value)}
-								fill-opacity="0.75"
-								stroke={colorScale(point.value)}
+								r={rScale(pt.value)}
+								fill={cScale(pt.value)}
+								fill-opacity="0.72"
+								stroke={cScale(pt.value)}
 								stroke-width="0.5"
 								stroke-opacity="0.9"
-								style="cursor: pointer;"
+								style="cursor: pointer"
 							/>
 						</GeoPoint>
 					{/each}
 				</Svg>
 			</Chart>
+
+			{#if points.length === 0 && !loading}
+				<div class="absolute inset-0 flex items-center justify-center text-gray-500 pointer-events-none">
+					No data for {selectedDate} · {selectedProvider}
+				</div>
+			{/if}
 		{:else}
-			<div class="flex items-center justify-center h-full text-gray-500">
-				Loading map…
-			</div>
+			<div class="flex items-center justify-center h-full text-gray-500">Loading map…</div>
 		{/if}
 
-		<!-- Tooltip -->
+		<!-- Floating tooltip -->
 		{#if tooltip}
 			<div
 				class="fixed z-50 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 shadow-lg text-sm pointer-events-none"
-				style="left: {tooltipX + 12}px; top: {tooltipY - 8}px;"
+				style="left:{tooltipX + 14}px; top:{tooltipY - 10}px"
 			>
-				<div class="font-medium text-white mb-1">{tooltip.area}</div>
-				<div class="text-gray-300">
-					{selectedMetric.label}: <span class="text-indigo-300 font-semibold"
-						>{tooltip.value.toFixed(2)} {selectedMetric.unit}</span
-					>
-				</div>
-				<div class="text-gray-500 text-xs mt-0.5">{tooltip.count.toLocaleString()} tests</div>
+				<p class="font-semibold text-white mb-0.5">{tooltip.area}</p>
+				<p class="text-gray-300">
+					{selectedMetric.label}:
+					<span class="font-semibold text-indigo-300">{tooltip.value.toFixed(2)} {selectedMetric.unit}</span>
+				</p>
+				<p class="text-gray-500 text-xs mt-0.5">{tooltip.count.toLocaleString()} tests</p>
 			</div>
 		{/if}
 	</div>
 
-	<!-- Legend -->
+	<!-- Footer legend -->
 	{#if points.length > 0}
-		<div class="px-6 py-3 border-t border-gray-800 flex items-center gap-4 text-xs text-gray-500">
+		<div class="px-6 py-2 border-t border-gray-800 flex items-center gap-4 text-xs text-gray-500">
 			<span>
 				{selectedMetric.label} range:
-				<strong class="text-gray-300">{minValue.toFixed(1)}</strong>
+				<strong class="text-gray-300">{minVal.toFixed(1)}</strong>
 				–
-				<strong class="text-gray-300">{maxValue.toFixed(1)} {selectedMetric.unit}</strong>
+				<strong class="text-gray-300">{maxVal.toFixed(1)} {selectedMetric.unit}</strong>
 			</span>
 			<span class="text-gray-700">·</span>
-			<span>Bubble size &amp; color proportional to {selectedMetric.label.toLowerCase()}</span>
+			<span>Bubble size &amp; colour ∝ {selectedMetric.label.toLowerCase()}</span>
 			<span class="text-gray-700">·</span>
 			<span>{points.length} areas</span>
 		</div>

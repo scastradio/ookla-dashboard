@@ -6,31 +6,33 @@ import type { RequestHandler } from './$types.js';
 export const GET: RequestHandler = async ({ url }) => {
 	const table = GAUSSTABLE ?? 'ookla';
 	const metric = url.searchParams.get('metric') ?? 'dl_speed_mbps';
-	const fromDate = url.searchParams.get('from') ?? null;
-	const toDate = url.searchParams.get('to') ?? null;
+	const date = url.searchParams.get('date') ?? null;
+	const provider = url.searchParams.get('provider') ?? null;
 
 	const allowed = new Set(['dl_speed_mbps', 'ul_speed_mbps', 'ave_latency_ms']);
 	if (!allowed.has(metric)) {
 		return json({ error: 'Invalid metric' }, { status: 400 });
 	}
 
-	const dateFilter: string[] = [];
+	const conditions: string[] = [
+		`client_latitude IS NOT NULL`,
+		`client_longitude IS NOT NULL`,
+		`client_latitude <> ''`,
+		`client_longitude <> ''`
+	];
 	const params: string[] = [];
-	if (fromDate) {
-		params.push(fromDate);
-		dateFilter.push(`test_date >= $${params.length}`);
-	}
-	if (toDate) {
-		params.push(toDate);
-		dateFilter.push(`test_date <= $${params.length}`);
+
+	if (date) {
+		params.push(date);
+		conditions.push(`test_date = $${params.length}`);
 	}
 
-	const where =
-		`client_latitude IS NOT NULL
-		AND client_longitude IS NOT NULL
-		AND client_latitude <> ''
-		AND client_longitude <> ''` +
-		(dateFilter.length ? ' AND ' + dateFilter.join(' AND ') : '');
+	if (provider && provider !== 'all') {
+		params.push(`%${provider}%`);
+		conditions.push(`isp_generated ILIKE $${params.length}`);
+	}
+
+	const where = conditions.join(' AND ');
 
 	const query = `
 		SELECT
