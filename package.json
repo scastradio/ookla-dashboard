@@ -1,0 +1,36 @@
+{
+  "name": "ookla-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "node -r dotenv/config build/index.js"
+  },
+  "dependencies": {
+    "d3-array": "^3.2.4",
+    "d3-geo": "^3.1.1",
+    "d3-scale": "^4.0.2",
+    "layerchart": "^1.0.13",
+    "pg": "^8.11.3",
+    "svelte-ux": "^1.0.10",
+    "topojson-client": "^3.1.0"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-node": "^2.0.0",
+    "@sveltejs/kit": "^2.60.1",
+    "@sveltejs/vite-plugin-svelte": "^3.1.2",
+    "@types/d3-geo": "^3.1.0",
+    "@types/pg": "^8.11.6",
+    "@types/topojson-client": "^3.1.4",
+    "autoprefixer": "^10.4.19",
+    "dotenv": "^16.6.1",
+    "postcss": "^8.4.38",
+    "svelte": "^4.2.18",
+    "tailwindcss": "^3.4.3",
+    "typescript": "^5.4.5",
+    "vite": "^5.2.11"
+  },
+  "type": "module"
+}
