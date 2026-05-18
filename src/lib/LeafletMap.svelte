@@ -2,38 +2,40 @@
 	import { onMount, onDestroy, createEventDispatcher } from 'svelte';
 
 	export let points: { area: string; lat: number; lng: number; value: number; count: number }[] = [];
+	export let leetPoints: { area: string; provider: string; lat: number; lng: number; value: number; count: number }[] = [];
+	export let leet = false;
 	export let metricLabel = 'Download';
 	export let metricUnit = 'Mbps';
-	export let colorFn: (t: number) => string = () => '#6366f1';
+	export let colorFn: (value: number) => string = () => '#6366f1';
 	export let maxVal = 1;
 	export let minVal = 0;
 
-	const dispatch = createEventDispatcher<{ hover: { area: string; value: number; count: number; x: number; y: number } | null }>();
+	const dispatch = createEventDispatcher<{
+		hover: { area: string; value: number; count: number; provider?: string; x: number; y: number } | null
+	}>();
 
 	let mapEl: HTMLDivElement;
 	let L: typeof import('leaflet');
 	let map: import('leaflet').Map;
 	let circleLayer: import('leaflet').LayerGroup;
 
-	// South Africa bounds
 	const SA_CENTER: [number, number] = [-29.0, 25.0];
 	const SA_BOUNDS = [[-35.0, 16.0], [-22.0, 33.5]] as [[number, number], [number, number]];
 
+	// Deterministic colour per provider name
+	function providerColor(provider: string): string {
+		let hash = 0;
+		for (let i = 0; i < provider.length; i++) {
+			hash = ((hash << 5) - hash) + provider.charCodeAt(i);
+			hash |= 0;
+		}
+		const hue = Math.abs(hash) % 360;
+		return `hsl(${hue},70%,58%)`;
+	}
+
 	function radiusForValue(val: number, max: number): number {
-		if (max <= 0) return 6;
-		return 4 + (val / max) * 28;
-	}
-
-	function hexToRgba(hex: string, alpha: number): string {
-		const r = parseInt(hex.slice(1, 3), 16);
-		const g = parseInt(hex.slice(3, 5), 16);
-		const b = parseInt(hex.slice(5, 7), 16);
-		return `rgba(${r},${g},${b},${alpha})`;
-	}
-
-	function colorForValue(val: number): string {
-		const t = maxVal > minVal ? (val - minVal) / (maxVal - minVal) : 0;
-		return colorFn(Math.max(0, Math.min(1, t)));
+		if (max <= 0) return 5;
+		return 3 + (val / max) * 22;
 	}
 
 	onMount(async () => {
@@ -44,13 +46,11 @@
 			center: SA_CENTER,
 			zoom: 6,
 			minZoom: 5,
-			maxZoom: 12,
+			maxZoom: 14,
 			maxBounds: SA_BOUNDS,
 			maxBoundsViscosity: 0.85,
-			zoomControl: true,
 		});
 
-		// Dark tile layer (CartoDB Dark Matter)
 		L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
 			attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
 			subdomains: 'abcd',
@@ -61,62 +61,81 @@
 		renderCircles();
 	});
 
-	onDestroy(() => {
-		map?.remove();
-	});
+	onDestroy(() => { map?.remove(); });
 
 	function renderCircles() {
 		if (!L || !circleLayer) return;
 		circleLayer.clearLayers();
 
-		for (const pt of points) {
-			if (!pt.lat || !pt.lng) continue;
-			const color = colorForValue(pt.value);
-			const radius = radiusForValue(pt.value, maxVal);
+		if (leet) {
+			const maxLeet = Math.max(...leetPoints.map(p => p.value), 1);
+			for (const pt of leetPoints) {
+				if (!pt.lat || !pt.lng) continue;
+				const color = providerColor(pt.provider);
+				const radius = radiusForValue(pt.value, maxLeet);
 
-			const circle = L.circleMarker([pt.lat, pt.lng], {
-				radius,
-				fillColor: color,
-				fillOpacity: 0.75,
-				color: color,
-				weight: 1,
-				opacity: 0.9,
-			});
-
-			circle.on('mouseover', (e) => {
-				circle.setStyle({ fillOpacity: 1, weight: 2 });
-				dispatch('hover', {
-					area: pt.area,
-					value: pt.value,
-					count: pt.count,
-					x: e.originalEvent.clientX,
-					y: e.originalEvent.clientY,
+				const circle = L.circleMarker([pt.lat, pt.lng], {
+					radius,
+					fillColor: color,
+					fillOpacity: 0.72,
+					color,
+					weight: 1,
+					opacity: 0.9,
 				});
-			});
-			circle.on('mousemove', (e) => {
-				dispatch('hover', {
-					area: pt.area,
-					value: pt.value,
-					count: pt.count,
-					x: e.originalEvent.clientX,
-					y: e.originalEvent.clientY,
+
+				circle.on('mouseover', (e) => {
+					circle.setStyle({ fillOpacity: 1, weight: 2 });
+					dispatch('hover', { area: pt.area, provider: pt.provider, value: pt.value, count: pt.count, x: e.originalEvent.clientX, y: e.originalEvent.clientY });
 				});
-			});
-			circle.on('mouseout', () => {
-				circle.setStyle({ fillOpacity: 0.75, weight: 1 });
-				dispatch('hover', null);
-			});
+				circle.on('mousemove', (e) => {
+					dispatch('hover', { area: pt.area, provider: pt.provider, value: pt.value, count: pt.count, x: e.originalEvent.clientX, y: e.originalEvent.clientY });
+				});
+				circle.on('mouseout', () => {
+					circle.setStyle({ fillOpacity: 0.72, weight: 1 });
+					dispatch('hover', null);
+				});
+				circleLayer.addLayer(circle);
+			}
+		} else {
+			for (const pt of points) {
+				if (!pt.lat || !pt.lng) continue;
+				const t = maxVal > minVal ? (pt.value - minVal) / (maxVal - minVal) : 0;
+				const color = colorFn(Math.max(0, Math.min(1, t)));
+				const radius = radiusForValue(pt.value, maxVal);
 
-			circle.bindPopup(
-				`<strong>${pt.area}</strong><br/>${metricLabel}: ${pt.value.toFixed(2)} ${metricUnit}<br/>${pt.count.toLocaleString()} tests`,
-				{ className: 'ookla-popup' }
-			);
+				const circle = L.circleMarker([pt.lat, pt.lng], {
+					radius,
+					fillColor: color,
+					fillOpacity: 0.75,
+					color,
+					weight: 1,
+					opacity: 0.9,
+				});
 
-			circleLayer.addLayer(circle);
+				circle.on('mouseover', (e) => {
+					circle.setStyle({ fillOpacity: 1, weight: 2 });
+					dispatch('hover', { area: pt.area, value: pt.value, count: pt.count, x: e.originalEvent.clientX, y: e.originalEvent.clientY });
+				});
+				circle.on('mousemove', (e) => {
+					dispatch('hover', { area: pt.area, value: pt.value, count: pt.count, x: e.originalEvent.clientX, y: e.originalEvent.clientY });
+				});
+				circle.on('mouseout', () => {
+					circle.setStyle({ fillOpacity: 0.75, weight: 1 });
+					dispatch('hover', null);
+				});
+				circle.bindPopup(
+					`<strong>${pt.area}</strong><br/>${metricLabel}: ${pt.value.toFixed(2)} ${metricUnit}<br/>${pt.count.toLocaleString()} tests`,
+					{ className: 'ookla-popup' }
+				);
+				circleLayer.addLayer(circle);
+			}
 		}
 	}
 
-	$: if (circleLayer) { points; maxVal; minVal; renderCircles(); }
+	$: if (circleLayer) { points; leetPoints; leet; maxVal; minVal; renderCircles(); }
+
+	// Exported so page can look up provider colour for legend/tooltip
+	export { providerColor };
 </script>
 
 <div bind:this={mapEl} class="w-full h-full" />
@@ -129,9 +148,7 @@
 		border-radius: 8px;
 		font-size: 13px;
 	}
-	:global(.ookla-popup .leaflet-popup-tip) {
-		background: #1f2937;
-	}
+	:global(.ookla-popup .leaflet-popup-tip) { background: #1f2937; }
 	:global(.leaflet-control-zoom a) {
 		background: #1f2937 !important;
 		color: #9ca3af !important;
@@ -146,7 +163,5 @@
 		color: #6b7280 !important;
 		font-size: 10px;
 	}
-	:global(.leaflet-control-attribution a) {
-		color: #9ca3af !important;
-	}
+	:global(.leaflet-control-attribution a) { color: #9ca3af !important; }
 </style>
