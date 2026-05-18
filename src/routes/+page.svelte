@@ -14,7 +14,6 @@
 		{ key: 'ave_latency_ms', label: 'Latency',  unit: 'ms',   higherIsBetter: false, color: (t) => interpolateRdYlGn(1 - t) }
 	];
 
-	function today(): string { return new Date().toISOString().slice(0, 10); }
 	function daysAgo(n: number): string {
 		const d = new Date(); d.setDate(d.getDate() - n);
 		return d.toISOString().slice(0, 10);
@@ -23,10 +22,11 @@
 	type DateRange = { label: string; from: string; to: string };
 
 	function buildRanges(): DateRange[] {
+		const yesterday = daysAgo(1);
 		return [
-			{ label: 'Today',       from: today(),     to: today() },
-			{ label: 'Last 2 days', from: daysAgo(1),  to: today() },
-			{ label: 'Last 30 days',from: daysAgo(29), to: today() },
+			{ label: 'Yesterday',   from: yesterday,  to: yesterday },
+			{ label: 'Last 2 days', from: daysAgo(2), to: yesterday },
+			{ label: 'Last 30 days',from: daysAgo(30),to: yesterday },
 		];
 	}
 
