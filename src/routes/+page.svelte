@@ -39,6 +39,7 @@
 	let tooltipX = 0;
 	let tooltipY = 0;
 
+	let mounted = false;
 	onMount(async () => {
 		const [topoRes, dateRes, provRes] = await Promise.all([
 			fetch('/world-110m.json'),
@@ -65,6 +66,7 @@
 		}
 
 		await loadData();
+		mounted = true;
 	});
 
 	async function loadData() {
@@ -88,7 +90,7 @@
 		}
 	}
 
-	$: selectedMetric, selectedDate, selectedProvider, loadData();
+	$: if (mounted) { selectedMetric, selectedDate, selectedProvider; loadData(); }
 
 	$: maxVal = Math.max(...points.map((p) => p.value), 1);
 	$: minVal = Math.min(...points.map((p) => p.value), 0);
@@ -105,7 +107,7 @@
 		: 0;
 </script>
 
-<div class="min-h-screen flex flex-col bg-gray-950 text-gray-100">
+<div class="h-screen flex flex-col bg-gray-950 text-gray-100 overflow-hidden">
 	<!-- Header -->
 	<header class="px-6 py-4 border-b border-gray-800 flex items-center justify-between">
 		<div>
@@ -190,12 +192,13 @@
 	</div>
 
 	<!-- Map -->
-	<div class="flex-1 relative" style="min-height: 540px;">
+	<div class="flex-1 min-h-0 relative">
 		{#if geojson}
-			<Chart
-				geo={{ projection: geoNaturalEarth1, fitGeojson: geojson }}
-				padding={{ top: 16, bottom: 16, left: 16, right: 16 }}
-			>
+			<div class="absolute inset-0">
+				<Chart
+					geo={{ projection: geoNaturalEarth1, fitGeojson: geojson }}
+					padding={{ top: 16, bottom: 16, left: 16, right: 16 }}
+				>
 				<Svg>
 					{#each geojson.features as feat}
 						<GeoPath
@@ -231,6 +234,7 @@
 					{/each}
 				</Svg>
 			</Chart>
+			</div>
 
 			{#if points.length === 0 && !loading}
 				<div class="absolute inset-0 flex items-center justify-center text-gray-500 pointer-events-none">
