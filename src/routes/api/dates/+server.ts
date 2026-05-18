@@ -10,7 +10,7 @@ export const GET: RequestHandler = async () => {
 	try {
 		const pool = getPool();
 		const result = await pool.query(
-			`SELECT MIN(test_date) AS min_date, MAX(test_date) AS max_date FROM ${table}`
+			`SELECT LEFT(MIN(test_date), 10) AS min_date, LEFT(MAX(test_date), 10) AS max_date FROM ${table}`
 		);
 		return json(result.rows[0]);
 	} catch (err) {

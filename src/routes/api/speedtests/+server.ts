@@ -19,14 +19,14 @@ export const GET: RequestHandler = async ({ url }) => {
 	const conditions: string[] = [
 		`client_latitude IS NOT NULL`,
 		`client_longitude IS NOT NULL`,
-		`client_latitude <> ''`,
-		`client_longitude <> ''`
+		`LENGTH(client_latitude) > 0`,
+		`LENGTH(client_longitude) > 0`
 	];
 	const params: string[] = [];
 
 	if (date) {
 		params.push(date);
-		conditions.push(`test_date = $${params.length}`);
+		conditions.push(`LEFT(test_date, 10) = $${params.length}`);
 	}
 
 	if (provider && provider !== 'all') {
@@ -42,19 +42,19 @@ export const GET: RequestHandler = async ({ url }) => {
 			AVG(client_latitude::float)   AS lat,
 			AVG(client_longitude::float)  AS lng,
 			AVG(${metric}::float)         AS value,
-			COUNT(*)::int                 AS count
+			COUNT(*)                      AS test_count
 		FROM ${table}
 		WHERE ${where}
 		GROUP BY geo_area
 		HAVING AVG(${metric}::float) IS NOT NULL
-		ORDER BY count DESC
+		ORDER BY test_count DESC
 		LIMIT 800
 	`;
 
 	try {
 		const pool = getPool();
 		const result = await pool.query(query, params);
-		return json({ points: result.rows });
+		return json({ points: result.rows.map(r => ({ ...r, count: Number(r.test_count) })) });
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		return json({ error: message }, { status: 500 });

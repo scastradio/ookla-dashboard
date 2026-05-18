@@ -10,14 +10,14 @@ export const GET: RequestHandler = async () => {
 	try {
 		const pool = getPool();
 		const result = await pool.query(`
-			SELECT isp_generated AS provider, COUNT(*)::int AS count
+			SELECT isp_generated AS provider, COUNT(*) AS test_count
 			FROM ${table}
-			WHERE isp_generated IS NOT NULL AND isp_generated <> ''
+			WHERE isp_generated IS NOT NULL AND LENGTH(isp_generated) > 0
 			GROUP BY isp_generated
-			ORDER BY count DESC
+			ORDER BY test_count DESC
 			LIMIT 100
 		`);
-		return json({ providers: result.rows });
+		return json({ providers: result.rows.map(r => ({ provider: r.provider, count: Number(r.test_count) })) });
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		return json({ error: message }, { status: 500 });
