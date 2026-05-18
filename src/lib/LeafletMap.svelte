@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy, createEventDispatcher } from 'svelte';
 
-	export let points: { area: string; lat: number; lng: number; value: number; count: number }[] = [];
+	export let points: { area: string; provider: string; lat: number; lng: number; value: number; test_date: string }[] = [];
 	export let leetPoints: { area: string; provider: string; lat: number; lng: number; value: number; count: number }[] = [];
 	export let leet = false;
 	export let metricLabel = 'Download';
@@ -11,7 +11,7 @@
 	export let minVal = 0;
 
 	const dispatch = createEventDispatcher<{
-		hover: { area: string; value: number; count: number; provider?: string; x: number; y: number } | null
+		hover: { area: string; value: number; provider?: string; test_date?: string; x: number; y: number } | null
 	}>();
 
 	let mapEl: HTMLDivElement;
@@ -114,17 +114,17 @@
 
 				circle.on('mouseover', (e) => {
 					circle.setStyle({ fillOpacity: 1, weight: 2 });
-					dispatch('hover', { area: pt.area, value: pt.value, count: pt.count, x: e.originalEvent.clientX, y: e.originalEvent.clientY });
+					dispatch('hover', { area: pt.area, value: pt.value, provider: pt.provider, test_date: pt.test_date, x: e.originalEvent.clientX, y: e.originalEvent.clientY });
 				});
 				circle.on('mousemove', (e) => {
-					dispatch('hover', { area: pt.area, value: pt.value, count: pt.count, x: e.originalEvent.clientX, y: e.originalEvent.clientY });
+					dispatch('hover', { area: pt.area, value: pt.value, provider: pt.provider, test_date: pt.test_date, x: e.originalEvent.clientX, y: e.originalEvent.clientY });
 				});
 				circle.on('mouseout', () => {
 					circle.setStyle({ fillOpacity: 0.75, weight: 1 });
 					dispatch('hover', null);
 				});
 				circle.bindPopup(
-					`<strong>${pt.area}</strong><br/>${metricLabel}: ${pt.value.toFixed(2)} ${metricUnit}<br/>${pt.count.toLocaleString()} tests`,
+					`<strong>${pt.area}</strong><br/>${pt.provider}<br/>${metricLabel}: <strong>${pt.value.toFixed(2)} ${metricUnit}</strong><br/><span style="color:#9ca3af;font-size:11px">${pt.test_date?.slice(0,16) ?? ''}</span>`,
 					{ className: 'ookla-popup' }
 				);
 				circleLayer.addLayer(circle);

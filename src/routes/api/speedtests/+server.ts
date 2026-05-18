@@ -7,20 +7,21 @@ export const GET: RequestHandler = async ({ url }) => {
 	const schema = GAUSSSCHEMA ?? '';
 	const tbl = GAUSSTABLE ?? 'ookla';
 	const table = schema ? `${schema}.${tbl}` : tbl;
+
 	const metric = url.searchParams.get('metric') ?? 'dl_speed_mbps';
 	const date = url.searchParams.get('date') ?? null;
 	const provider = url.searchParams.get('provider') ?? null;
 
 	const allowed = new Set(['dl_speed_mbps', 'ul_speed_mbps', 'ave_latency_ms']);
-	if (!allowed.has(metric)) {
-		return json({ error: 'Invalid metric' }, { status: 400 });
-	}
+	if (!allowed.has(metric)) return json({ error: 'Invalid metric' }, { status: 400 });
 
 	const conditions: string[] = [
 		`client_latitude IS NOT NULL`,
 		`client_longitude IS NOT NULL`,
 		`LENGTH(client_latitude) > 0`,
-		`LENGTH(client_longitude) > 0`
+		`LENGTH(client_longitude) > 0`,
+		`${metric} IS NOT NULL`,
+		`LENGTH(${metric}) > 0`
 	];
 	const params: string[] = [];
 
@@ -34,27 +35,34 @@ export const GET: RequestHandler = async ({ url }) => {
 		conditions.push(`isp_generated ILIKE $${params.length}`);
 	}
 
-	const where = conditions.join(' AND ');
-
+	// Return individual records with exact GPS coords
 	const query = `
 		SELECT
-			COALESCE(geo_area, 'Unknown') AS area,
-			AVG(client_latitude::float)   AS lat,
-			AVG(client_longitude::float)  AS lng,
-			AVG(${metric}::float)         AS value,
-			COUNT(*)                      AS test_count
+			COALESCE(geo_area, 'Unknown')    AS area,
+			COALESCE(isp_generated, 'Unknown') AS provider,
+			client_latitude::float           AS lat,
+			client_longitude::float          AS lng,
+			${metric}::float                 AS value,
+			test_date                        AS test_date
 		FROM ${table}
-		WHERE ${where}
-		GROUP BY geo_area
-		HAVING AVG(${metric}::float) IS NOT NULL
-		ORDER BY test_count DESC
-		LIMIT 800
+		WHERE ${conditions.join(' AND ')}
+		ORDER BY ${metric}::float DESC
+		LIMIT 5000
 	`;
 
 	try {
 		const pool = getPool();
 		const result = await pool.query(query, params);
-		return json({ points: result.rows.map(r => ({ ...r, count: Number(r.test_count) })) });
+		return json({
+			points: result.rows.map(r => ({
+				area:     r.area,
+				provider: r.provider,
+				lat:      Number(r.lat),
+				lng:      Number(r.lng),
+				value:    Number(r.value),
+				test_date: r.test_date
+			}))
+		});
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		return json({ error: message }, { status: 500 });

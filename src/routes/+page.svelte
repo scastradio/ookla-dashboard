@@ -3,7 +3,7 @@
 	import { onMount } from 'svelte';
 	import LeafletMap from '$lib/LeafletMap.svelte';
 
-	type Point     = { area: string; lat: number; lng: number; value: number; count: number };
+	type Point     = { area: string; provider: string; lat: number; lng: number; value: number; test_date: string };
 	type LeetPoint = { area: string; provider: string; lat: number; lng: number; value: number; count: number };
 	type Provider  = { provider: string; count: number };
 	type Metric    = { key: string; label: string; unit: string; higherIsBetter: boolean; color: (t: number) => string };
@@ -41,7 +41,7 @@
 	let minDate = '';
 	let maxDate = '';
 
-	type HoverData = { area: string; value: number; count: number; provider?: string; x: number; y: number } | null;
+	type HoverData = { area: string; value: number; provider?: string; test_date?: string; x: number; y: number } | null;
 	let tooltip: HoverData = null;
 
 	// Group leet points by area for bar chart tooltip
@@ -113,8 +113,8 @@
 		const n = maxVal > minVal ? (selectedMetric.higherIsBetter ? t : 1 - t) : 0;
 		return selectedMetric.color(Math.max(0, Math.min(1, n)));
 	};
-	$: totalTests  = points.reduce((s, p) => s + p.count, 0);
-	$: avgVal      = totalTests ? points.reduce((s, p) => s + p.value * p.count, 0) / totalTests : 0;
+	$: totalTests  = points.length;
+	$: avgVal      = totalTests ? points.reduce((s, p) => s + p.value, 0) / totalTests : 0;
 </script>
 
 <div class="h-screen flex flex-col bg-gray-950 text-gray-100 overflow-hidden">
@@ -219,7 +219,7 @@
 			<span class="text-gray-700">·</span>
 			<span>Bubble size &amp; colour ∝ {selectedMetric.label.toLowerCase()}</span>
 			<span class="text-gray-700">·</span>
-			<span>{points.length} areas</span>
+			<span>{points.length.toLocaleString()} individual tests</span>
 		</div>
 	{/if}
 </div>
@@ -253,11 +253,14 @@
 				{/each}
 			</div>
 		{:else}
-			<!-- Normal mode: simple tooltip -->
+			<!-- Normal mode: individual test tooltip -->
 			<div class="px-4 py-3">
 				<p class="font-semibold text-white mb-1">{tooltip.area}</p>
+				<p class="text-gray-400 text-xs mb-1">{tooltip.provider ?? ''}</p>
 				<p class="text-gray-300">{selectedMetric.label}: <span class="font-semibold text-indigo-300">{tooltip.value.toFixed(2)} {selectedMetric.unit}</span></p>
-				<p class="text-gray-500 text-xs mt-0.5">{tooltip.count.toLocaleString()} tests</p>
+				{#if tooltip.test_date}
+					<p class="text-gray-500 text-xs mt-1">{tooltip.test_date.slice(0,16)}</p>
+				{/if}
 			</div>
 		{/if}
 	</div>
